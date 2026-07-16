@@ -1,0 +1,29 @@
+# local config (may contain passwords)
+.env
+
+# never commit dump files or extracted data
+*.dmp
+dumps/
+dumps-nmdr-mfom/
+
+# runtime artifacts (docker-written; constraint extracts, generated SQL)
+state/
+
+# python
+__pycache__/
+*.pyc
+
+*.xlsx
+*.zip
+gfi
+
+*.dump
+.envrc
+.vscode
+*.sql
+
+# neo4j bulk-import CSVs (regenerable from postgres)
+neo4j-import/
+nmd.sql
+nmd.sql
+*.sql

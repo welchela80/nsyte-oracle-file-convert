@@ -1,0 +1,189 @@
+# NMD migration stack: Oracle (staging/import) + Postgres (target) + a Python ETL.
+# Usage is documented in README.md. Copy .env.example -> .env first.
+name: nmd
+
+services:
+  # ── Oracle Free: import dumps here with impdp, read out with the ETL ──────────
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    container_name: nmd-oracle
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:-oracle}   # SYS/SYSTEM password
+    ports:
+      - "1521:1521"          # host access for sqlplus/sqlcl etc.; etl uses the service name
+    shm_size: "1g"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      # the read-only dump folder (set DUMP_DIR in .env). Long syntax avoids the Windows
+      # drive-letter colon breaking the volume spec.
+      - type: bind
+        source: ${DUMP_DIR:?set DUMP_DIR in .env}
+        target: /dumps
+        read_only: true
+      # *.sql here run once on first init (creates the DUMP_DIR directory object + staging users)
+      - ./oracle-init:/container-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 40            # Oracle first-boot can take a few minutes
+      start_period: 60s
+
+  # ── PostgreSQL: the conversion target (schemas: mfom, nmdr) ───────────────────
+  postgres:
+    # TimescaleDB on PG 18.4 — the -ha (Ubuntu/glibc) variant, NOT the default Alpine one:
+    # this cluster was initdb'd under glibc en_US.utf8, and musl would silently change text
+    # collation (corrupting b-tree index order). Volume chown'd 999->1000 for this image's uid.
+    image: timescale/timescaledb-ha:pg18
+    container_name: nmd-postgres
+    shm_size: '2gb'        # parallel hash joins spill into /dev/shm; the 64 MB docker default
+                           # aborted large joins ("could not resize shared memory segment")
+    environment:
+      POSTGRES_USER: ${PG_USER:-nmd}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-nmd}
+      POSTGRES_DB: ${PG_DB:-nmd}
+      PGDATA: /var/lib/postgresql/18/docker   # ha image defaults elsewhere; keep our cluster path
+    ports:
+      - "5432:5432"          # host tools (psql, RStudio, gfi loads) keep using localhost:5432
+    # Tuned for this host treated as DEDICATED to Postgres (32 cores / 62 GB RAM / NVMe) and
+    # this workload: an analytical/ETL database with few concurrent connections, big scans and
+    # joins, where all data is reloadable from dumps.
+    command:
+      - postgres
+      # timescaledb must be preloaded before CREATE EXTENSION works
+      - -c
+      - shared_preload_libraries=timescaledb
+      # memory
+      - -c
+      - shared_buffers=20GB              # ~1/3 RAM (dedicated box)
+      - -c
+      - effective_cache_size=48GB        # planner's cache assumption (~78% RAM incl. OS cache)
+      - -c
+      - work_mem=256MB                   # per sort/hash node AND per parallel worker — 512MB at
+                                         # 16-way parallelism OOM-killed the canonical rebuild
+      - -c
+      - maintenance_work_mem=4GB         # index builds, VACUUM
+      # parallelism (all 32 cores available)
+      - -c
+      - max_worker_processes=40          # parallel pool + background-worker headroom
+      - -c
+      - max_parallel_workers=32
+      - -c
+      - max_parallel_workers_per_gather=8   # memory multiplier per query; 16 proved OOM-prone
+                                            # while the Oracle container is co-resident
+      - -c
+      - max_parallel_maintenance_workers=16
+      # WAL / checkpoints (bulk-load friendly)
+      - -c
+      - max_wal_size=8GB
+      - -c
+      - min_wal_size=1GB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_compression=lz4
+      - -c
+      - synchronous_commit=off           # analysis DB, all data reloadable; a crash may lose the
+                                         # last few commits but never corrupts (fsync stays on)
+      # I/O (NVMe)
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - maintenance_io_concurrency=200
+      - -c
+      - io_workers=12                    # PG18 async-I/O worker pool (default 3)
+    volumes:
+      # PG18 image convention: mount the parent dir; PGDATA defaults to /var/lib/postgresql/18/docker.
+      # Cluster was pg_upgrade'd (copy mode) from the 16 cluster in the old pg_data volume.
+      - pg18_data:/var/lib/postgresql
+
+  # ── pgAdmin: web UI for the target DB — http://localhost:5050 ─────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nmd-pgadmin
+    ports:
+      - "5050:5050"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}   # must be a non-reserved domain or pgAdmin refuses to boot
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_LISTEN_PORT: "5050"
+      PGADMIN_CONFIG_SERVER_MODE: "False"  # desktop mode: local single-user tool, no login page
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      # Preregisters the nmd connection — but pgAdmin only auto-imports this on FIRST init of
+      # pgadmin_data. If the volume already exists (e.g. after a failed first boot), import by hand:
+      #   docker exec nmd-pgadmin /venv/bin/python /pgadmin4/setup.py \
+      #     load-servers /pgadmin4/servers.json --user pgadmin4@pgadmin.org
+      # (desktop mode uses the built-in pgadmin4@pgadmin.org user, not PGADMIN_DEFAULT_EMAIL)
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres: { condition: service_started }
+
+  # ── Neo4j: graph view of the canonical schema — http://localhost:7474 ─────────
+  # Loaded via neo4j-admin bulk import from CSVs exported by etl/export_neo4j_csv.sh
+  # into ./neo4j-import (gitignored). Reload flow:
+  #   bash etl/export_neo4j_csv.sh && docker compose stop neo4j
+  #   docker compose run --rm neo4j neo4j-admin database import full neo4j ... (see script header)
+  #   docker compose up -d neo4j
+  neo4j:
+    image: neo4j:5
+    container_name: nmd-neo4j
+    ports:
+      - "7474:7474"   # browser UI
+      - "7687:7687"   # bolt
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-nmdgraph1}
+      # conservative sizing: postgres holds 20GB shared_buffers on this box
+      NEO4J_server_memory_heap_initial__size: 4G
+      NEO4J_server_memory_heap_max__size: 4G
+      NEO4J_server_memory_pagecache_size: 6G
+    volumes:
+      - neo4j_data:/data
+      - ./neo4j-import:/import:ro   # CSV drop folder for neo4j-admin import
+
+  # ── OPA: policy decision point (PDP) — the SECMGR-replacement authz layer ─────
+  # Serves nmd/authz at http://localhost:8181/v1/data/nmd/authz/decision. A future
+  # Postgres extension (PEP) would query this per session and compile the decision into
+  # SQL. Policies live in ./policy; test with:  docker compose run --rm opa test /policy -v
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: nmd-opa
+    ports:
+      - "8181:8181"
+    command: ["run", "--server", "--addr", "0.0.0.0:8181", "--log-level", "error", "/policy"]
+    volumes:
+      - ./policy:/policy:ro
+
+  # ── ETL runner: python-oracledb (thin) -> Postgres COPY. We `exec` into it. ───
+  etl:
+    build:
+      context: ./etl
+    container_name: nmd-etl
+    depends_on:
+      oracle:   { condition: service_healthy }
+      postgres: { condition: service_started }
+    environment:
+      # bridge networking: reach oracle/postgres via compose service-name DNS
+      ORA_DSN:      "oracle:1521/FREEPDB1"
+      ORA_USER:     "system"
+      ORA_PASSWORD: "${ORACLE_PASSWORD:-oracle}"
+      PG_HOST:      "postgres"
+      PG_PORT:      "5432"
+      PG_DB:        "${PG_DB:-nmd}"
+      PG_USER:      "${PG_USER:-nmd}"
+      PG_PASSWORD:  "${PG_PASSWORD:-nmd}"
+    volumes:
+      - ./etl:/app
+      - ./state:/state       # resumable progress lives here
+      - ./xlsx:/xlsx:ro      # Excel drop folder (load_xlsx.py reads from here)
+    working_dir: /app
+    command: ["sleep", "infinity"]
+
+volumes:
+  oracle_data:
+  pg18_data:     # live PG18 cluster (pg_upgrade'd from pg_data)
+  pgadmin_data:  # pgAdmin user prefs / saved passwords
+  neo4j_data:    # neo4j graph store (rebuildable from postgres via etl/export_neo4j_csv.sh)

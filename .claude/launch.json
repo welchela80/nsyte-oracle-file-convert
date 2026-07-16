@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pgadmin",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "pgadmin"],
+      "port": 5050
+    },
+    {
+      "name": "neo4j",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "neo4j"],
+      "port": 7474
+    },
+    {
+      "name": "opa",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "opa"],
+      "port": 8181
+    },
+    {
+      "name": "swlin-tree",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8799", "--bind", "127.0.0.1", "--directory", "r/out"],
+      "port": 8799
+    }
+  ]
+}

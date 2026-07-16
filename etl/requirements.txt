@@ -1,0 +1,6 @@
+# Oracle access in THIN mode — no Oracle Instant Client needed.
+oracledb>=2.2
+# Postgres + fast COPY.
+psycopg2-binary>=2.9
+# Excel ingestion (load_xlsx.py).
+openpyxl>=3.1

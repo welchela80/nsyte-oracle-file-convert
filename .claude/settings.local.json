@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Read(//tmp/claude-1000/**)",
+      "Bash(bash -n load_dump.sh)",
+      "Bash(bash load_dump.sh 'mfom_exp_part_%U.dmp' MFOM)",
+      "Bash(awk -F'\\\\t' '{printf \"%-40s %8.1f MB\\\\n\",$1,$2/1048576; t+=$2} END{printf \"%d files, %.1f GB total\\\\n\",NR,t/1073741824}')",
+      "Bash(sort -t'\"' -k4)",
+      "Bash(bash load_dump.sh 'vsb_exp_%U.dmp' VSB)",
+      "Bash(bash load_dump.sh 'vsb_exp_%U.dmp' VSB 'BT_AWN_COMMENT')",
+      "Bash(bash load_dump.sh 'vsb_exp_nonunnpi_%U.dmp' VSB)",
+      "Bash(awk -F'\\\\t' '{printf \"%-70s %10.2f MB\\\\n\",$1,$2/1048576; t+=$2} END{printf \"%d files, %.1f MB total\\\\n\",NR,t/1048576}')",
+      "Bash(python3 -c \"import openpyxl, pandas; print\\('host has openpyxl+pandas'\\)\")",
+      "Bash(cp /tmp/claude-1000/-home-karabijavad-fathom5-nsyte-nsyte-oracle-file-convert/9c5f1015-0604-435b-817b-0e65f58c2fde/scratchpad/cons/*.sql /home/karabijavad/fathom5/nsyte/nsyte-oracle-file-convert/state/ && ls /home/karabijavad/fathom5/nsyte/nsyte-oracle-file-convert/state/)",
+      "Bash(docker exec *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(docker cp *)",
+      "Bash(awk '/CREATE TABLE \"MFOM\".\"BT_DATA_3M_NARRATIVE\"/{f=1} f && /PARTITION|^;/{print} f && /;$/{exit}' /tmp/claude-1000/-home-karabijavad-fathom5-nsyte-nsyte-oracle-file-convert/9c5f1015-0604-435b-817b-0e65f58c2fde/scratchpad/sf/sf_mfomexpUdmp.sql)",
+      "Bash(awk '/CREATE TABLE \"MFOM\".\"BT_DATA_3M_NARRATIVE\"/{f=1} f{print} f&&/;[[:space:]]*$/{exit}' /tmp/claude-1000/-home-karabijavad-fathom5-nsyte-nsyte-oracle-file-convert/9c5f1015-0604-435b-817b-0e65f58c2fde/scratchpad/sf/sf_mfomexpUdmp.sql)",
+      "Bash(echo \"create rc=$?\")",
+      "Bash(bash /tmp/claude-1000/-home-karabijavad-fathom5-nsyte-nsyte-oracle-file-convert/9c5f1015-0604-435b-817b-0e65f58c2fde/scratchpad/audit_dumps.sh)",
+      "Bash(echo \"inbound FKs to cfr_comment: $\\(docker exec nmd-postgres psql -U nmd -d nmd -tA -c \"SELECT count\\(*\\) FROM pg_constraint WHERE confrelid='nmdr.cfr_comment'::regclass\"\\)\")",
+      "Bash(bash load_dump.sh 'NMDR_EXP_%U.dmp' NMDR 'CFR_COMMENT')",
+      "Bash(docker volume *)",
+      "Bash(docker pull *)",
+      "Bash(docker run --name pg-upgrade --rm -v nmd_pg_data:/old -v nmd_pg18_data:/var/lib/postgresql postgres:18 bash -c ' *)",
+      "Bash(docker run --name pg-upgrade --rm --network host -v nmd_pg_data:/old -v nmd_pg18_data:/var/lib/postgresql postgres:18 bash -c ' *)",
+      "Bash(docker run *)",
+      "Bash(export PGPASSWORD=nmd)",
+      "Bash(psql -h localhost -p 5434 -U nmd -d nmd -c \"\\\\dn\")",
+      "Bash(wsl -l -v)",
+      "Bash(wsl -e bash -lc \"which psql; which docker; docker ps --format '{{.Names}}' 2>&1 | head\")",
+      "Bash(wsl -e bash -lc \"sudo -u postgres psql -p 5434 -d nmd -c '\\\\dn' 2>&1 | head -40\")",
+      "Bash(wsl -e bash -lc \"sudo -u postgres psql -p 5434 -U nmd -d nmd -c '\\\\dn' 2>&1 | head -40\")",
+      "Bash(wsl -e bash -lc 'sudo -u postgres psql -p 5434 -U nmd -d nmd -c \" *)"
+    ]
+  }
+}

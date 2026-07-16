@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "nmd (local)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "nmd",
+      "Username": "nmd",
+      "SSLMode": "prefer",
+      "Comment": "NMD conversion target: schemas mfom / nmdr / vsb / xlsx / awn / canonical. Host 'postgres' = compose service name. Password is the PG_PASSWORD from .env (default: nmd)."
+    }
+  }
+}
